@@ -115,7 +115,7 @@ static gl2d_t gl2d_init(const char *title, int width, int height) {
         return NULL;
     }
 
-    gl2d_t gl2d = calloc(1, sizeof(struct _gl2d_s));
+    gl2d_t gl2d = (gl2d_t)calloc(1, sizeof(struct _gl2d_s));
     gl2d->window = glfwCreateWindow(width, height, title, NULL, NULL);
     if (gl2d->window == NULL) {
         // TODO: Error

@@ -12,11 +12,11 @@
 #include "ising.h"
 #include "params.h"
 #include "xoshiro256plus.h"
+#include "wtime.h"
 
 #include <assert.h>
 #include <cuda_runtime.h>
 #include <limits.h> // UINT_MAX
-#include <omp.h>
 #include <stdint.h>
 #include <stdio.h>  // printf()
 #include <stdlib.h> // abs()
@@ -132,7 +132,7 @@ int main(void) {
   seed(SEED);
 
   // start timer
-  double start = omp_get_wtime();
+  double start = wtime();
 
   int *d_black, *d_red;
   cudaMallocManaged(&d_black, ROWS * COLS * sizeof(int));
@@ -144,7 +144,7 @@ int main(void) {
   cycle(d_black, d_red, TEMP_INITIAL, TEMP_FINAL, TEMP_DELTA, DELTA_T, stat);
 
   // stop timer
-  double elapsed = omp_get_wtime() - start;
+  double elapsed = wtime() - start;
   printf("# Total Simulation Time (sec): %lf\n", elapsed);
   printf("# Spins/ms: %lf\n", N / (elapsed * 1000));
 
