@@ -11,8 +11,8 @@
 
 #include "ising.h"
 #include "params.h"
-#include "xoshiro256plus.h"
 #include "wtime.h"
+#include "xoshiro256plus.h"
 
 #include <assert.h>
 #include <cuda_runtime.h>
@@ -139,6 +139,7 @@ int main(void) {
   cudaMallocManaged(&d_red, ROWS * COLS * sizeof(int));
   init(d_black);
   init(d_red);
+  init_state();
 
   // temperature increasing cycle
   cycle(d_black, d_red, TEMP_INITIAL, TEMP_FINAL, TEMP_DELTA, DELTA_T, stat);
