@@ -132,13 +132,16 @@ int main(void) {
 
   // start timer
   double start = omp_get_wtime();
-  int *d_black = (int *)malloc(ROWS * COLS * sizeof(int));
-  int *d_red = (int *)malloc(ROWS * COLS * sizeof(int));
+
+  int *d_black, *d_red;
+  cudaMallocManaged(&d_black, ROWS * COLS * sizeof(int));
+  cudaMallocManaged(&d_red, ROWS * COLS * sizeof(int));
   init(d_black);
   init(d_red);
 
   // temperature increasing cycle
-  cycle(d_black, d_red, TEMP_INITIAL, TEMP_FINAL, TEMP_DELTA, DELTA_T, stat);
+  cycle(black_grid, red_grid, TEMP_INITIAL, TEMP_FINAL, TEMP_DELTA, DELTA_T,
+        stat);
 
   // stop timer
   double elapsed = omp_get_wtime() - start;
