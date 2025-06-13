@@ -14,10 +14,10 @@
 #include "ising.h"
 #include "params.h"
 #include "xoshiro256plus.h"
+#include "wtime.h"    // wtime()
 
 #include <assert.h>
 #include <limits.h> // UINT_MAX
-#include <omp.h>    // omp_get_wtime()
 #include <stdio.h>  // printf()
 #include <stdlib.h> // rand()
 #include <string.h>
@@ -37,7 +37,7 @@ static void draw(gl2d_t gl2d, float t_now, float t_min, float t_max,
                  int *black_grid, int *red_grid) {
   static double last_frame = 0.0;
 
-  double current_time = omp_get_wtime();
+  double current_time = wtime();
   if (current_time - last_frame < 1.0 / MAXFPS) {
     return;
   }
@@ -117,7 +117,7 @@ int main(void) {
   gl2d_t gl2d = gl2d_init("tiny_ising", L, L);
 
   // start timer
-  double start = omp_get_wtime();
+  double start = wtime();
 
   int *d_black = (int *)malloc(ROWS * COLS * sizeof(int));
   int *d_red = (int *)malloc(ROWS * COLS * sizeof(int));
@@ -129,7 +129,7 @@ int main(void) {
   cycle(gl2d, TEMP_INITIAL, TEMP_FINAL, TEMP_DELTA, d_black, d_red);
 
   // stop timer
-  double elapsed = omp_get_wtime() - start;
+  double elapsed = wtime() - start;
   printf("# Total Simulation Time (sec): %lf\n", elapsed);
 
   gl2d_destroy(gl2d);
