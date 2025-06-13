@@ -5,7 +5,7 @@
 #include <stddef.h>
 #include <stdio.h>
 
-// #include <cuda_runtime.h>
+#include <cuda_runtime.h>
 
 static float exp_table[32];
 

@@ -14,6 +14,7 @@
 #include "xoshiro256plus.h"
 
 #include <assert.h>
+#include <cuda_runtime.h>
 #include <limits.h> // UINT_MAX
 #include <omp.h>
 #include <stdint.h>
@@ -140,8 +141,7 @@ int main(void) {
   init(d_red);
 
   // temperature increasing cycle
-  cycle(black_grid, red_grid, TEMP_INITIAL, TEMP_FINAL, TEMP_DELTA, DELTA_T,
-        stat);
+  cycle(d_black, d_red, TEMP_INITIAL, TEMP_FINAL, TEMP_DELTA, DELTA_T, stat);
 
   // stop timer
   double elapsed = omp_get_wtime() - start;
