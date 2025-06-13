@@ -27,12 +27,14 @@
 #define N (L * L)   // system size
 #define SEED 0xC4FE //(time(NULL)) // random seed
 
+#define ROWS (L / 2)
+#define COLS L
 
 /**
  * GL output
  */
 static void draw(gl2d_t gl2d, float t_now, float t_min, float t_max,
-                 int black_grid[L / 2][L], int red_grid[L / 2][L]) {
+                 int *black_grid, int *red_grid) {
   static double last_frame = 0.0;
 
   double current_time = omp_get_wtime();
@@ -48,7 +50,8 @@ static void draw(gl2d_t gl2d, float t_now, float t_min, float t_max,
   for (int i = 0; i < L; ++i) {
     memset(row, 0, sizeof(row));
     for (int j = 0; j < L; ++j) {
-      int cell = (i % 2 == 0) ? black_grid[i / 2][j] : red_grid[i / 2][j];
+      int cell = (i % 2 == 0) ? black_grid[(i / 2) * L + j]
+                              : red_grid[(i / 2) * L + j];
       if (cell > 0) {
         row[j * 3] = color[0];
         row[j * 3 + 1] = color[1];
@@ -62,8 +65,7 @@ static void draw(gl2d_t gl2d, float t_now, float t_min, float t_max,
 
 
 static void cycle(gl2d_t gl2d, const float initial, const float final,
-                  const float step, int black_grid[L / 2][L],
-                  int red_grid[L / 2][L]) {
+                  const float step, int *black_grid, int *red_grid) {
   assert((0.0f < step && initial <= final) ||
          (step < 0.0f && final <= initial));
   int modifier = (0.0f < step) ? 1 : -1;
@@ -80,10 +82,10 @@ static void cycle(gl2d_t gl2d, const float initial, const float final,
 }
 
 
-static void init(int grid[L / 2][L]) {
+static void init(int *grid) {
   for (size_t i = 0; i < L / 2; ++i) {
     for (size_t j = 0; j < L; ++j) {
-      grid[i][j] = (rand() / (float)RAND_MAX) < 0.5f ? -1 : 1;
+      grid[i * L + j] = (rand() / (float)RAND_MAX) < 0.5f ? -1 : 1;
     }
   }
 }
@@ -117,14 +119,14 @@ int main(void) {
   // start timer
   double start = omp_get_wtime();
 
-  // clear the grid
-  int black_grid[L / 2][L];
-  int red_grid[L / 2][L];
-  init(black_grid);
-  init(red_grid);
+  int *d_black = (int *)malloc(ROWS * COLS * sizeof(int));
+  int *d_red = (int *)malloc(ROWS * COLS * sizeof(int));
+  init(d_black);
+  init(d_red);
+
 
   // temperature increasing cycle
-  cycle(gl2d, TEMP_INITIAL, TEMP_FINAL, TEMP_DELTA, black_grid, red_grid);
+  cycle(gl2d, TEMP_INITIAL, TEMP_FINAL, TEMP_DELTA, d_black, d_red);
 
   // stop timer
   double elapsed = omp_get_wtime() - start;
