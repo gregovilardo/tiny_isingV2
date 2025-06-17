@@ -1,6 +1,6 @@
 # Compiler and flags
 CC = nvcc
-CFLAGS += -std=c++14 -O3 -Xcompiler -Wall,-Wextra 
+CFLAGS += -std=c++14 -O3  -arch=sm_60 -Xcompiler -Wall,-Wextra -lcurand
 LDFLAGS = -lm
 GL_LDFLAGS = -lGL -lglfw
 

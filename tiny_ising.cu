@@ -11,25 +11,24 @@
 
 #include "ising.h"
 #include "params.h"
-#include "xoshiro256plus.h"
-#include "wtime.h"
 
 #include <assert.h>
+#include <chrono>
 #include <cuda_runtime.h>
+#include <curand_kernel.h>
 #include <limits.h> // UINT_MAX
 #include <stdint.h>
 #include <stdio.h>  // printf()
 #include <stdlib.h> // abs()
-#include <time.h>   // time()
 
 
 // Internal definitions and functions
 // out vector size, it is +1 since we reach TEMP_
 #define NPOINTS (1 + (int)((TEMP_FINAL - TEMP_INITIAL) / TEMP_DELTA))
-#define N (L * L)         // system size
-#define SEED (time(NULL)) // random seed
-#define ROWS (L / 2)
-#define COLS L
+#define N (L_SIZE * L_SIZE) // system size
+#define ROWS (L_SIZE / 2)
+#define COLS L_SIZE
+#define SEED (0xCAFEUL)
 
 // temperature, E, E^2, E^4, M, M^2, M^4
 struct statpoint {
@@ -44,7 +43,8 @@ struct statpoint {
 
 static void cycle(int *black_grid, int *red_grid, const float min,
                   const float max, const float step,
-                  const unsigned int calc_step, struct statpoint stats[]) {
+                  const unsigned int calc_step, struct statpoint stats[],
+                  curandState *d_state) {
 
   assert((0.0f < step && min <= max) || (step < 0.0f && max <= min));
   int modifier = (0.0f < step) ? 1 : -1;
@@ -54,14 +54,13 @@ static void cycle(int *black_grid, int *red_grid, const float min,
 
     // equilibrium phase
     for (size_t j = 0; j < TRAN; ++j) {
-      update(temp, black_grid, red_grid);
+      update(temp, black_grid, red_grid, d_state);
     }
-
     // measurement phase
     unsigned int measurements = 0;
     float e = 0.0, e2 = 0.0, e4 = 0.0, m = 0.0, m2 = 0.0, m4 = 0.0;
     for (size_t j = 0; j < TMAX; ++j) {
-      update(temp, black_grid, red_grid);
+      update(temp, black_grid, red_grid, d_state);
       if (j % calc_step == 0) {
         float energy = 0.0, mag = 0.0;
         int M_max = 0;
@@ -88,11 +87,13 @@ static void cycle(int *black_grid, int *red_grid, const float min,
   }
 }
 
-
-static void init(int *grid) {
-  for (int i = 0; i < ROWS; ++i)
-    for (int j = 0; j < COLS; ++j)
-      grid[i * COLS + j] = 1;
+__global__ void init(int *array) {
+  size_t i = blockIdx.y * blockDim.y + threadIdx.y;
+  size_t j = blockIdx.x * blockDim.x + threadIdx.x;
+  if (i < ROWS && j < COLS) {
+    size_t idx = i * COLS + j;
+    array[idx] = 1;
+  }
 }
 
 
@@ -106,7 +107,7 @@ int main(void) {
       TMAX % DELTA_T == 0,
       "Measurements must be equidistant"); // take equidistant calculate()
   static_assert(
-      (L * L / 2) * 4ULL < UINT_MAX,
+      (L_SIZE * L_SIZE / 2) * 4ULL < UINT_MAX,
       "L too large for uint indices"); // max energy, that is all spins are the
                                        // same, fits into a ulong
 
@@ -119,7 +120,7 @@ int main(void) {
   }
 
   // print header
-  printf("# L: %i\n", L);
+  printf("#L_SIZE: %i\n",L_SIZE);
   printf("# Minimum Temperature: %f\n", TEMP_INITIAL);
   printf("# Maximum Temperature: %f\n", TEMP_FINAL);
   printf("# Temperature Step: %.12f\n", TEMP_DELTA);
@@ -128,25 +129,49 @@ int main(void) {
   printf("# Data Acquiring Step: %i\n", DELTA_T);
   printf("# Number of Points: %i\n", NPOINTS);
 
-  // configure RNG
-  seed(SEED);
-
   // start timer
-  double start = wtime();
+  const auto start = std::chrono::high_resolution_clock::now();
+  curandState *d_state;
+  int *d_black, *d_red; // TODO: probar si funciona mejor con int8_t/char
+  cudaMalloc(&d_black, ROWS * COLS * sizeof(int));
+  cudaMalloc(&d_red, ROWS * COLS * sizeof(int));
+  if (cudaGetLastError() != cudaSuccess) {
+    fprintf(stderr, "Error allocating memory on device\n");
+    return -1;
+  }
+  // initialize the grids
+  dim3 threadsPerBlock(16, 16);
+  dim3 numBlocks((ROWS + 15) / 16, (COLS + 15) / 16);
+  init<<<numBlocks, threadsPerBlock>>>(d_black);
+  if (cudaGetLastError() != cudaSuccess) {
+    fprintf(stderr, "Error initializing black grid\n");
+    return -1;
+  }
+  init<<<numBlocks, threadsPerBlock>>>(d_red);
+  if (cudaGetLastError() != cudaSuccess) {
+    fprintf(stderr, "Error initializing red grid\n");
+    return -1;
+  }
 
-  int *d_black, *d_red;
-  cudaMallocManaged(&d_black, ROWS * COLS * sizeof(int));
-  cudaMallocManaged(&d_red, ROWS * COLS * sizeof(int));
-  init(d_black);
-  init(d_red);
+  // Initialize random states once
+  initialize_random_states(&d_state, SEED); // or any seed
 
   // temperature increasing cycle
-  cycle(d_black, d_red, TEMP_INITIAL, TEMP_FINAL, TEMP_DELTA, DELTA_T, stat);
+  cycle(d_black, d_red, TEMP_INITIAL, TEMP_FINAL, TEMP_DELTA, DELTA_T, stat,
+        d_state);
 
   // stop timer
-  double elapsed = wtime() - start;
-  printf("# Total Simulation Time (sec): %lf\n", elapsed);
-  printf("# Spins/ms: %lf\n", N / (elapsed * 1000));
+  const auto elapsed = std::chrono::high_resolution_clock::now() - start;
+
+  // Convert to seconds for printing
+  auto elapsed_seconds =
+      std::chrono::duration_cast<std::chrono::duration<double>>(elapsed);
+  printf("# Total Simulation Time (sec): %lf\n", elapsed_seconds.count());
+
+  // Convert to milliseconds for spins calculation
+  auto elapsed_ms =
+      std::chrono::duration_cast<std::chrono::milliseconds>(elapsed);
+  printf("# Spins/ms: %lf\n", (double)N / elapsed_ms.count());
 
   printf("# Temp\tE\tE^2\tE^4\tM\tM^2\tM^4\n");
   for (size_t i = 0; i < NPOINTS; ++i) {
@@ -156,5 +181,15 @@ int main(void) {
            stat[i].m4);
   }
 
+  // free memory
+  cudaFree(d_black);
+  cudaFree(d_red);
+  cudaFree(d_state);
+  if (cudaGetLastError() != cudaSuccess) {
+    fprintf(stderr, "Error freeing memory on device\n");
+    return -1;
+  }
+
   return 0;
 }
+
